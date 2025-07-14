@@ -108,6 +108,7 @@ mode = st.radio(
 )
 use_self_consistency = st.checkbox("Enable Self-Consistency (n=5)")
 use_tree_of_thought = st.checkbox("Enable Tree-of-Thought Mode (3 reasoning paths)")
+use_reflexion = st.checkbox("Enable Reflexion Agent Mode")
 
 def build_prompt(q, mode):
     return f"{q.strip()}\n\nLet's think step by step." if mode == "Chain of Thought" else q.strip()
@@ -141,12 +142,46 @@ def get_self_consistent_answer(prompt, model_choice, n=5):
 def get_tree_of_thought(prompt, model_choice, n=3):
     return [call_model(prompt, model_choice)[0].strip() for _ in range(n)]
 
+def run_reflexion_loop(prompt, model_choice, max_retries=1):
+    original_answer, _ = call_model(prompt, model_choice)
+
+    # Ask the model to critique its own answer
+    critique_prompt = f"""
+You previously answered the following question:
+
+{prompt}
+
+Your answer was:
+
+\"\"\"{original_answer}\"\"\"
+
+Your task now is to critique this answer. If it is correct, explain why. If there are any reasoning errors, incorrect calculations, or missing steps, clearly point them out. Be objective.
+"""
+
+    reflection, _ = call_model(critique_prompt, model_choice)
+
+    # Inject feedback into a new prompt if retrying
+    retry_prompt = f"""
+You previously answered the question but made some errors or were unsure.
+
+Here is a reflection of your last attempt:
+
+{reflection}
+
+Now try again and provide an improved, step-by-step answer:
+{prompt}
+"""
+    improved_answer, _ = call_model(retry_prompt, model_choice)
+
+    return original_answer.strip(), reflection.strip(), improved_answer.strip()
+
+
 # generate
 if st.button("Generate Answer"):
     with st.spinner("Thinking..."):
         prompt = build_prompt(question, mode)
 
-        if use_self_consistency and not use_tree_of_thought:
+        if use_self_consistency and not use_tree_of_thought and not use_reflexion:
             final, all_answers = get_self_consistent_answer(prompt, model_choice)
             st.markdown("### Self-Consistent Answer")
             st.write(final)
@@ -157,6 +192,21 @@ if st.button("Generate Answer"):
         elif use_tree_of_thought:
             prompt = build_prompt(question, "Chain of Thought")
             st.session_state.tree_thoughts = get_tree_of_thought(prompt, model_choice)
+
+        elif use_reflexion:
+            prompt = build_prompt(question, "Chain of Thought")
+            original, reflection, improved = run_reflexion_loop(prompt, model_choice)
+
+            st.markdown("### 🪞 Reflexion Agent Output")
+            st.markdown("**First Attempt:**")
+            st.write(original)
+
+            st.markdown("**🔍 Self-Critique / Reflection:**")
+            st.info(reflection)
+
+            st.markdown("**🔁 Improved Answer After Reflection:**")
+            st.success(improved)
+
 
         else:
             answer, tokens_used = call_model(prompt, model_choice)
