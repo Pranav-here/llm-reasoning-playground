@@ -22,7 +22,7 @@ It works with both OpenAI GPT‑3.5 and Groq Gemma‑9B‑IT models.
 
 ## Quick Start (Local)
 ```bash
-git clone https://github.com/your‑org/llm‑reasoning‑playground.git
+git clone https://github.com/pranav-here/llm‑reasoning‑playground.git
 cd llm‑reasoning‑playground
 cp .env.example .env            # add your API keys
 pip install -r requirements.txt
