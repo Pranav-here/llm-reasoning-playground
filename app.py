@@ -5,20 +5,22 @@ from groq import Groq
 import dotenv
 from collections import Counter
 
+# -------------------------------------------------------------
+# 🔧 Environment & Configuration
+# -------------------------------------------------------------
 dotenv.load_dotenv()
-
-# Set up the env variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-st.set_page_config(page_title="Chain of Thought Demo", layout="centered")
-st.title("Chain of Thought vs Direct Prompting")
+APP_TITLE = "LLM Reasoning Playground"
 
-# initialize session state for Tree-of-Thought
-if "tree_thoughts" not in st.session_state:
-    st.session_state.tree_thoughts = []
+st.set_page_config(page_title=APP_TITLE, layout="wide")
+st.title(APP_TITLE)
 
-test_suite = {
+# -------------------------------------------------------------
+# 📚 Advanced Reasoning Test‑Suite (unchanged)
+# -------------------------------------------------------------
+TEST_SUITE = {
     "None (custom question)": "",
     # --- Math & Quantitative Reasoning ---
     "Olympiad Algebra": (
@@ -84,37 +86,43 @@ test_suite = {
     ),
 }
 
-selected_test = st.selectbox(
-    "Pick a reasoning test (or choose None):",
-    list(test_suite.keys())
-)
-if selected_test != "None (custom question)":
-    question = test_suite[selected_test]
-else:
-    question = ""
+# Persistent state for Tree‑of‑Thought paths
+if "tree_thoughts" not in st.session_state:
+    st.session_state.tree_thoughts = []
 
-question = st.text_area(
-    "Enter a question:",
-    value=question,
-    placeholder="What's 12 times 17?"
-)
-model_choice = st.selectbox(
-    "Choose model:",
-    ["OpenAI (GPT 3.5)", "Groq (gemma2-9b-it)"]
-)
-mode = st.radio(
-    "Choose prompting style:",
-    ["Direct", "Chain of Thought"]
-)
-use_self_consistency = st.checkbox("Enable Self-Consistency (n=5)")
-use_tree_of_thought = st.checkbox("Enable Tree-of-Thought Mode (3 reasoning paths)")
-use_reflexion = st.checkbox("Enable Reflexion Agent Mode")
+# -------------------------------------------------------------
+# 🖥️ Sidebar – Controls & Settings
+# -------------------------------------------------------------
+st.sidebar.header("⚙️ Controls")
+selected_test = st.sidebar.selectbox("Reasoning Test", list(TEST_SUITE.keys()), index=0)
 
-def build_prompt(q, mode):
-    return f"{q.strip()}\n\nLet's think step by step." if mode == "Chain of Thought" else q.strip()
+question_default = TEST_SUITE[selected_test]
+question = st.text_area("✍️ Prompt", value=question_default, height=120, placeholder="Enter your own question…")
 
-def call_model(prompt, model_choice):
-    if model_choice == "OpenAI (GPT 3.5)":
+model_choice = st.sidebar.selectbox("Model", ["OpenAI (GPT 3.5)", "Groq (gemma2-9b-it)"])
+mode = st.sidebar.radio("Prompting Style", ["Direct", "Chain of Thought"], index=1)
+
+st.sidebar.markdown("---")
+use_self_consistency = st.sidebar.checkbox("🔁 Self‑Consistency (n=5)")
+use_tree_of_thought = st.sidebar.checkbox("🌳 Tree‑of‑Thought (3 paths)")
+use_reflexion = st.sidebar.checkbox("🪞 Reflexion Agent")
+
+# Ensure only one advanced mode is active
+advanced_modes = sum([use_self_consistency, use_tree_of_thought, use_reflexion])
+if advanced_modes > 1:
+    st.sidebar.error("Select **only one** advanced mode at a time.")
+
+# -------------------------------------------------------------
+# 🔌 Model Helpers (logic unchanged)
+# -------------------------------------------------------------
+
+def build_prompt(q: str, prompt_mode: str) -> str:
+    """Attach CoT cue if needed."""
+    return f"{q.strip()}\n\nLet's think step by step." if prompt_mode == "Chain of Thought" else q.strip()
+
+
+def call_model(prompt: str, choice: str):
+    if choice == "OpenAI (GPT 3.5)":
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -131,149 +139,88 @@ def call_model(prompt, model_choice):
     )
     return resp.choices[0].message.content, None
 
-def get_self_consistent_answer(prompt, model_choice, n=5):
-    answers = []
-    for _ in range(n):
-        ans, _ = call_model(prompt, model_choice)
-        answers.append(ans.strip().split("\n")[-1])
+
+# ---------- Self‑Consistency ----------
+
+def self_consistent_answer(prompt: str, choice: str, n: int = 5):
+    answers = [call_model(prompt, choice)[0].split("\n")[-1].strip() for _ in range(n)]
     most_common = Counter(answers).most_common(1)[0][0]
     return most_common, answers
 
-def get_tree_of_thought(prompt, model_choice, n=3):
-    return [call_model(prompt, model_choice)[0].strip() for _ in range(n)]
 
-def vote_best_path_with_llm(paths, original_prompt, model_choice):
-    voting_prompt = f"""You are given three different reasoning paths answering the following question:
+# ---------- Tree‑of‑Thought ----------
 
-{original_prompt}
-
-Reasoning Path 1:
-{paths[0]}
-
-Reasoning Path 2:
-{paths[1]}
-
-Reasoning Path 3:
-{paths[2]}
-
-Analyze the logic and correctness of each answer. Then pick the best one and explain why it is better than the others.
-
-Reply in this format:
-
-Best Path: 1/2/3  
-Justification: <your reasoning>
-"""
-    vote_response, _ = call_model(voting_prompt, model_choice)
-
-    # Extract which path it chose
-    best_path_num = 1  # default fallback
-    for i in [1, 2, 3]:
-        if f"Best Path: {i}" in vote_response:
-            best_path_num = i
-            break
-
-    return best_path_num, vote_response.strip()
-
-def run_reflexion_loop(prompt, model_choice, max_retries=1):
-    original_answer, _ = call_model(prompt, model_choice)
-
-    # Ask the model to critique its own answer
-    critique_prompt = f"""
-You previously answered the following question:
-
-{prompt}
-
-Your answer was:
-
-\"\"\"{original_answer}\"\"\"
-
-Your task now is to critique this answer. If it is correct, explain why. If there are any reasoning errors, incorrect calculations, or missing steps, clearly point them out. Be objective.
-"""
-
-    reflection, _ = call_model(critique_prompt, model_choice)
-
-    # Inject feedback into a new prompt if retrying
-    retry_prompt = f"""
-You previously answered the question but made some errors or were unsure.
-
-Here is a reflection of your last attempt:
-
-{reflection}
-
-Now try again and provide an improved, step-by-step answer:
-{prompt}
-"""
-    improved_answer, _ = call_model(retry_prompt, model_choice)
-
-    return original_answer.strip(), reflection.strip(), improved_answer.strip()
+def tree_of_thought(prompt: str, choice: str, paths: int = 3):
+    return [call_model(prompt, choice)[0].strip() for _ in range(paths)]
 
 
-# generate
-if st.button("Generate Answer"):
+def vote_best_path(paths, original_prompt, choice):
+    voting_prompt = f"""You are given three different reasoning paths answering the following question:\n\n{original_prompt}\n\nReasoning Path 1:\n{paths[0]}\n\nReasoning Path 2:\n{paths[1]}\n\nReasoning Path 3:\n{paths[2]}\n\nAnalyze the logic and correctness of each answer. Then pick the best one and explain why it is better than the others.\n\nReply exactly in this format:\nBest Path: 1/2/3\nJustification: <your reasoning>"""
+    response, _ = call_model(voting_prompt, choice)
+    best_num = next((i for i in [1, 2, 3] if f"Best Path: {i}" in response), 1)
+    return best_num, response.strip()
+
+
+# ---------- Reflexion ----------
+
+def reflexion_loop(prompt: str, choice: str):
+    first_answer, _ = call_model(prompt, choice)
+    critique_prompt = f"""You previously answered:\n\n---\n{first_answer}\n---\n\nCritique this answer objectively. If it is fully correct, say so; otherwise point out errors and suggest fixes."""
+    critique, _ = call_model(critique_prompt, choice)
+
+    retry_prompt = f"""Using the feedback below, improve your answer step‑by‑step:\n\n{critique}\n\nQuestion: {prompt}"""
+    improved, _ = call_model(retry_prompt, choice)
+    return first_answer.strip(), critique.strip(), improved.strip()
+
+# -------------------------------------------------------------
+# 🚀 Main Run Button
+# -------------------------------------------------------------
+if st.button("Generate", type="primary") and question.strip():
     with st.spinner("Thinking..."):
-        prompt = build_prompt(question, mode)
+        final_prompt = build_prompt(question, mode)
 
-        if use_self_consistency and not use_tree_of_thought and not use_reflexion:
-            final, all_answers = get_self_consistent_answer(prompt, model_choice)
-            st.markdown("### Self-Consistent Answer")
-            st.write(final)
-            with st.expander("See All Generated Answers"):
-                for i, ans in enumerate(all_answers, 1):
+        # ----- Self‑Consistency -----
+        if use_self_consistency and advanced_modes == 1:
+            best, tries = self_consistent_answer(final_prompt, model_choice)
+            st.subheader("🔁 Self‑Consistent Answer")
+            st.write(best)
+            with st.expander("See all tries"):
+                for i, ans in enumerate(tries, 1):
                     st.markdown(f"**Try {i}:** {ans}")
 
-        elif use_tree_of_thought:
-            prompt = build_prompt(question, "Chain of Thought")
-            st.session_state.tree_thoughts = get_tree_of_thought(prompt, model_choice)
+        # ----- Tree‑of‑Thought -----
+        elif use_tree_of_thought and advanced_modes == 1:
+            final_prompt = build_prompt(question, "Chain of Thought")  # always CoT
+            paths = tree_of_thought(final_prompt, model_choice)
+            best_num, justification = vote_best_path(paths, question, model_choice)
 
-            st.markdown("### 🌳 Tree of Thought Responses")
-            all_thoughts = get_tree_of_thought(prompt, model_choice)
-
-            # LLM voting
-            best_path_num, justification = vote_best_path_with_llm(all_thoughts, question, model_choice)
-
-            st.markdown(f"**🧠 LLM Selected Best Path: Path {best_path_num}**")
-            st.markdown("**🗣️ Justification:**")
+            st.subheader(f"🌳 LLM‑Chosen Best Path: Path {best_num}")
             st.info(justification)
 
-            with st.expander("🌿 All Reasoning Paths"):
-                for i, thought in enumerate(all_thoughts, 1):
-                    st.markdown(f"**Path {i}:**\n\n{thought}")
+            with st.expander("Show all reasoning paths"):
+                for i, p in enumerate(paths, 1):
+                    st.markdown(f"**Path {i}:**\n\n{p}")
 
-
-        elif use_reflexion:
-            prompt = build_prompt(question, "Chain of Thought")
-            original, reflection, improved = run_reflexion_loop(prompt, model_choice)
-
-            st.markdown("### 🪞 Reflexion Agent Output")
+        # ----- Reflexion -----
+        elif use_reflexion and advanced_modes == 1:
+            final_prompt = build_prompt(question, "Chain of Thought")
+            original, critique, improved = reflexion_loop(final_prompt, model_choice)
+            st.subheader("🪞 Reflexion Agent")
             st.markdown("**First Attempt:**")
             st.write(original)
-
-            st.markdown("**🔍 Self-Critique / Reflection:**")
-            st.info(reflection)
-
-            st.markdown("**🔁 Improved Answer After Reflection:**")
+            st.markdown("**Critique:**")
+            st.info(critique)
+            st.markdown("**Improved Answer:**")
             st.success(improved)
 
+        # ----- Basic Direct / CoT -----
+        elif advanced_modes == 0:
+            answer, tokens = call_model(final_prompt, model_choice)
+            st.subheader("💡 Answer")
+            st.write(answer)
+            if tokens:
+                cost = tokens / 1000 * 0.001
+                st.caption(f"Tokens: {tokens} | Estimated cost: ${cost:.4f}")
 
         else:
-            answer, tokens_used = call_model(prompt, model_choice)
-            st.markdown("### Answer")
-            st.write(answer)
-            if tokens_used:
-                cost = tokens_used / 1000 * 0.001
-                st.info(f"Used {tokens_used} tokens — estimated cost: ${cost:.4f}")
-
-# Tree-of-Thought UI (persistent)
-if use_tree_of_thought and st.session_state.tree_thoughts:
-    st.markdown("### Tree of Thought Responses")
-    selection = st.radio(
-        "Pick the best response:",
-        [f"Path{i+1}" for i in range(len(st.session_state.tree_thoughts))],
-        key="thought_selection"
-    )
-    idx = int(selection.replace("Path", "")) - 1
-    st.markdown("**Selected Reasoning Path:**")
-    st.write(st.session_state.tree_thoughts[idx])
-    with st.expander("See All Paths"):
-        for i, th in enumerate(st.session_state.tree_thoughts, 1):
-            st.markdown(f"**Path {i}:**\n\n{th}")
+            st.warning("Please choose **only one** advanced mode at a time.")
