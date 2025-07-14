@@ -3,8 +3,20 @@ import os
 import openai
 from groq import Groq
 import dotenv
+from collections import Counter
 
 dotenv.load_dotenv()
+
+def get_self_consistent_answer(prompt, model_fn, n=5):
+    answers = []
+    for _ in range(n):
+          ans=model_fn(prompt)
+          final_line=ans.strip().split("\n")[-1]
+          answers.append(final_line)
+    
+    count = Counter(answers)
+    most_common=count.most_common(1)[0][0]
+    return most_common, answers
 
 
 # Set up the env variables
