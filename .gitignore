@@ -1,3 +1,28 @@
-.env
-# venv
+# Ignore virtual environments
 cotminiapp/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# VS Code settings
+.vscode/
+
+# Environment files
+.env
+*.env
+
+# Mac or system files
+.DS_Store
+
+# Logs
+*.log
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Output and build folders
+dist/
+build/
+*.egg-info/
