@@ -142,6 +142,38 @@ def get_self_consistent_answer(prompt, model_choice, n=5):
 def get_tree_of_thought(prompt, model_choice, n=3):
     return [call_model(prompt, model_choice)[0].strip() for _ in range(n)]
 
+def vote_best_path_with_llm(paths, original_prompt, model_choice):
+    voting_prompt = f"""You are given three different reasoning paths answering the following question:
+
+{original_prompt}
+
+Reasoning Path 1:
+{paths[0]}
+
+Reasoning Path 2:
+{paths[1]}
+
+Reasoning Path 3:
+{paths[2]}
+
+Analyze the logic and correctness of each answer. Then pick the best one and explain why it is better than the others.
+
+Reply in this format:
+
+Best Path: 1/2/3  
+Justification: <your reasoning>
+"""
+    vote_response, _ = call_model(voting_prompt, model_choice)
+
+    # Extract which path it chose
+    best_path_num = 1  # default fallback
+    for i in [1, 2, 3]:
+        if f"Best Path: {i}" in vote_response:
+            best_path_num = i
+            break
+
+    return best_path_num, vote_response.strip()
+
 def run_reflexion_loop(prompt, model_choice, max_retries=1):
     original_answer, _ = call_model(prompt, model_choice)
 
@@ -192,6 +224,21 @@ if st.button("Generate Answer"):
         elif use_tree_of_thought:
             prompt = build_prompt(question, "Chain of Thought")
             st.session_state.tree_thoughts = get_tree_of_thought(prompt, model_choice)
+
+            st.markdown("### 🌳 Tree of Thought Responses")
+            all_thoughts = get_tree_of_thought(prompt, model_choice)
+
+            # LLM voting
+            best_path_num, justification = vote_best_path_with_llm(all_thoughts, question, model_choice)
+
+            st.markdown(f"**🧠 LLM Selected Best Path: Path {best_path_num}**")
+            st.markdown("**🗣️ Justification:**")
+            st.info(justification)
+
+            with st.expander("🌿 All Reasoning Paths"):
+                for i, thought in enumerate(all_thoughts, 1):
+                    st.markdown(f"**Path {i}:**\n\n{thought}")
+
 
         elif use_reflexion:
             prompt = build_prompt(question, "Chain of Thought")
