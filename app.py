@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import openai
+from openai import OpenAI
 from groq import Groq
 import dotenv
 from collections import Counter
@@ -123,7 +123,10 @@ def build_prompt(q: str, prompt_mode: str) -> str:
 
 def call_model(prompt: str, choice: str):
     if choice == "OpenAI (GPT 3.5)":
-        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is not set. Make sure your .env file or environment variable is loaded.")
+        
+        client = OpenAI(api_key=OPENAI_API_KEY)
         resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
@@ -131,6 +134,7 @@ def call_model(prompt: str, choice: str):
         )
         return resp.choices[0].message.content, resp.usage.total_tokens
 
+    # Groq model
     client = Groq(api_key=GROQ_API_KEY)
     resp = client.chat.completions.create(
         model="gemma-9b-it",
