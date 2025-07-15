@@ -94,18 +94,23 @@ if "tree_thoughts" not in st.session_state:
 # 🖥️ Sidebar – Controls & Settings
 # -------------------------------------------------------------
 st.sidebar.header("⚙️ Controls")
-selected_test = st.sidebar.selectbox("Reasoning Test", list(TEST_SUITE.keys()), index=0)
+selected_test = st.sidebar.selectbox("Reasoning Test", list(TEST_SUITE.keys()), index=0, help="Pick one of the built‑in puzzles, or switch to \"None (custom question)\" to type your own.")
 
 question_default = TEST_SUITE[selected_test]
-question = st.text_area("✍️ Prompt", value=question_default, height=120, placeholder="Enter your own question…")
-
-model_choice = st.sidebar.selectbox("Model", ["OpenAI (GPT 3.5)", "Groq (gemma2-9b-it)"])
-mode = st.sidebar.radio("Prompting Style", ["Direct", "Chain of Thought"], index=1)
+question = st.text_area(    "✍️ Prompt",    value=question_default,    height=120,    placeholder="Enter your own question…",    help="This box shows the default for the selected puzzle. If you want, just overwrite it with your own prompt.")
+model_choice = st.sidebar.selectbox(
+    "Model",    ["OpenAI (GPT 3.5)", "Groq (gemma2-9b-it)"],    help="Choose which LLM backend to use. GPT‑3.5 is OpenAI’s cloud model; gemma2‑9b‑it runs on Groq hardware.")
+mode = st.sidebar.radio(
+    "Prompting Style",
+    ["Direct", "Chain of Thought"],
+    index=1,
+    help="Direct: straight Q→A. Chain of Thought: appends “Let’s think step by step” to get more detailed reasoning."
+)
 
 st.sidebar.markdown("---")
-use_self_consistency = st.sidebar.checkbox("🔁 Self‑Consistency (n=5)")
-use_tree_of_thought = st.sidebar.checkbox("🌳 Tree‑of‑Thought (3 paths)")
-use_reflexion = st.sidebar.checkbox("🪞 Reflexion Agent")
+use_self_consistency = st.sidebar.checkbox("🔁 Self‑Consistency (n=5)", help="Run the prompt 5 times and pick the most common answer to reduce randomness.")
+use_tree_of_thought = st.sidebar.checkbox("🌳 Tree‑of‑Thought (3 paths)", help="Generate 3 separate CoT reasoning paths, then vote on which is best.")
+use_reflexion = st.sidebar.checkbox("🪞 Reflexion Agent", help="Have the model critique its first answer and then produce an improved version.")
 
 # Ensure only one advanced mode is active
 advanced_modes = sum([use_self_consistency, use_tree_of_thought, use_reflexion])
